@@ -1,0 +1,661 @@
+=== Markdown Cell 0 ===
+
+
+=== Markdown Cell 1 ===
+
+
+=== Cell 2 ===
+# ─── Librairies de base ───────────────────────────────────────────
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import warnings
+warnings.filterwarnings('ignore')
+
+# ─── Sklearn : prétraitement ───────────────────────────────────────
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+# ─── Sklearn : modèles ────────────────────────────────────────────
+from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
+
+# ─── Sklearn : métriques ──────────────────────────────────────────
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, confusion_matrix, classification_report
+)
+
+# ─── Style global ─────────────────────────────────────────────────
+plt.style.use('seaborn-v0_8-whitegrid')
+sns.set_palette('Set2')
+pd.set_option('display.max_columns', 30)
+pd.set_option('display.float_format', '{:.4f}'.format)
+
+print('✅ Toutes les librairies importées avec succès !')
+
+=== Cell 3 ===
+
+df = pd.read_csv('Brain_Tumor_Prediction_Dataset.csv')
+
+
+
+=== Markdown Cell 4 ===
+
+
+=== Markdown Cell 5 ===
+
+
+=== Cell 6 ===
+df.head()
+
+=== Markdown Cell 7 ===
+
+
+=== Cell 8 ===
+print('─' * 50)
+print('TYPES DE DONNÉES')
+print('─' * 50)
+print(df.dtypes)
+print(f'\nDimensions : {df.shape[0]} lignes × {df.shape[1]} colonnes')
+
+=== Markdown Cell 9 ===
+
+
+=== Cell 10 ===
+df.describe(include='all').T
+
+=== Markdown Cell 11 ===
+
+
+=== Cell 12 ===
+missing = df.isnull().sum()
+missing_pct = (missing / len(df) * 100).round(2)
+missing_df = pd.DataFrame({
+    'Valeurs manquantes': missing,
+    'Pourcentage (%)': missing_pct
+}).sort_values('Valeurs manquantes', ascending=False)
+
+missing_positive = missing_df[missing_df['Valeurs manquantes'] > 0]
+
+if missing_positive.empty:
+    print('✅ Aucune valeur manquante !')
+else:
+    print(f'⚠️  {len(missing_positive)} colonne(s) avec des valeurs manquantes :\n')
+    display(missing_positive)
+
+# Visualisation
+fig, ax = plt.subplots(figsize=(10, 4))
+missing_positive['Pourcentage (%)'].plot(kind='barh', ax=ax, color='#e74c3c', edgecolor='black')
+ax.set_title('Pourcentage de valeurs manquantes par colonne', fontsize=12, fontweight='bold')
+ax.set_xlabel('Pourcentage (%)')
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 13 ===
+
+
+=== Cell 14 ===
+dups = df.duplicated().sum()
+print(f'Nombre de doublons : {dups}')
+if dups == 0:
+    print('✅ Aucun doublon trouvé.')
+else:
+    print(f'⚠️  {dups} ligne(s) dupliquée(s) à supprimer.')
+
+=== Markdown Cell 15 ===
+
+
+=== Cell 16 ===
+counts = df['Brain_Tumor_Present'].value_counts()
+pcts   = df['Brain_Tumor_Present'].value_counts(normalize=True) * 100
+
+print('Distribution Brain_Tumor_Present :')
+print(pd.DataFrame({'Nb patients': counts, 'Pourcentage (%)': pcts.round(2)}))
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+fig.suptitle('Distribution des variables cibles', fontsize=13, fontweight='bold')
+
+# Brain_Tumor_Present
+axes[0].bar(['Pas de tumeur (0)', 'Tumeur présente (1)'],
+            counts.sort_index(), color=['#2ecc71', '#e74c3c'], edgecolor='black')
+axes[0].set_title('Brain_Tumor_Present')
+axes[0].set_ylabel('Nombre de patients')
+for bar in axes[0].patches:
+    axes[0].text(bar.get_x() + bar.get_width()/2,
+                 bar.get_height() + 8,
+                 f'{bar.get_height():.0f}', ha='center', fontsize=11)
+
+# Tumor_Type
+df['Tumor_Type'].value_counts().plot(kind='bar', ax=axes[1],
+    color=['#3498db','#9b59b6','#e67e22','#1abc9c'], edgecolor='black')
+axes[1].set_title('Tumor_Type')
+axes[1].set_ylabel('Nombre de patients')
+axes[1].tick_params(axis='x', rotation=30)
+
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 17 ===
+
+
+=== Markdown Cell 18 ===
+
+
+=== Cell 19 ===
+df_clean = df.copy()
+before = len(df_clean)
+df_clean.drop_duplicates(inplace=True)
+print(f'Doublons supprimés : {before - len(df_clean)}')
+print(f'Shape après suppression : {df_clean.shape}')
+
+=== Markdown Cell 20 ===
+
+
+=== Cell 21 ===
+leakage_cols = ['Survival_Rate(%)', 'Treatment_Received']
+df_clean.drop(columns=leakage_cols, inplace=True)
+print(f'✅ Colonnes data-leakage supprimées : {leakage_cols}')
+print(f'Shape après suppression data leakage : {df_clean.shape}')
+
+=== Markdown Cell 22 ===
+
+
+=== Cell 23 ===
+num_cols = df_clean.select_dtypes(include=['float64', 'int64']).columns.tolist()
+cat_cols = df_clean.select_dtypes(include=['object']).columns.tolist()
+
+# Imputation numérique → moyenne
+for col in num_cols:
+    if df_clean[col].isnull().sum() > 0:
+        mean_val = df_clean[col].mean()
+        df_clean[col].fillna(mean_val, inplace=True)
+        print(f'  📊 [{col}] → remplie par la moyenne : {mean_val:.3f}')
+
+# Imputation catégorielle → mode
+for col in cat_cols:
+    if df_clean[col].isnull().sum() > 0:
+        mode_val = df_clean[col].mode()[0]
+        df_clean[col].fillna(mode_val, inplace=True)
+        print(f'  🔤 [{col}] → remplie par le mode : "{mode_val}"')
+
+total_missing = df_clean.isnull().sum().sum()
+print(f'\n✅ Valeurs manquantes restantes : {total_missing}')
+
+=== Markdown Cell 24 ===
+
+
+=== Cell 25 ===
+le = LabelEncoder()
+
+# On encode toutes les catégorielles sauf les cibles
+cat_to_encode = [c for c in cat_cols if c not in ['Brain_Tumor_Present', 'Tumor_Type']]
+
+for col in cat_to_encode:
+    df_clean[col] = le.fit_transform(df_clean[col].astype(str))
+    print(f'  ✅ Encodé : {col}')
+
+print(f'\nShape final après encodage : {df_clean.shape}')
+df_clean.head(3)
+
+=== Markdown Cell 26 ===
+
+
+=== Cell 27 ===
+scaler = StandardScaler()
+
+# On ne normalise PAS les variables cibles
+cols_to_scale = [
+    c for c in df_clean.select_dtypes(include=['float64', 'int64']).columns
+    if c not in ['Brain_Tumor_Present', 'Tumor_Type']
+]
+
+df_clean[cols_to_scale] = scaler.fit_transform(df_clean[cols_to_scale])
+
+print(f'✅ Normalisation appliquée sur {len(cols_to_scale)} colonnes.')
+print(f'Exemple — Tumor_Size après normalisation : moyenne = {df_clean["Tumor_Size"].mean():.4f}, std = {df_clean["Tumor_Size"].std():.4f}')
+
+=== Markdown Cell 28 ===
+
+
+=== Markdown Cell 29 ===
+
+
+=== Cell 30 ===
+fig, ax = plt.subplots(figsize=(14, 10))
+numeric_df = df_clean.select_dtypes(include=['float64', 'int64'])
+corr = numeric_df.corr()
+mask = np.triu(np.ones_like(corr, dtype=bool))  # masque triangle supérieur
+
+sns.heatmap(
+    corr, mask=mask, annot=True, fmt='.2f',
+    cmap='coolwarm', center=0, linewidths=0.5,
+    ax=ax, annot_kws={'size': 7}
+)
+ax.set_title('Matrice de Corrélation', fontsize=14, fontweight='bold', pad=15)
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 31 ===
+
+
+=== Cell 32 ===
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+fig.suptitle('Impact des features sur Brain_Tumor_Present', fontsize=13, fontweight='bold')
+
+# Histogramme Tumor_Size
+for val, label, color in [(0, 'Pas de tumeur', '#2ecc71'), (1, 'Tumeur présente', '#e74c3c')]:
+    subset = df_clean[df_clean['Brain_Tumor_Present'] == val]['Tumor_Size']
+    axes[0].hist(subset, bins=30, alpha=0.6, label=label, color=color, edgecolor='black')
+axes[0].set_title('Distribution de Tumor_Size (normalisée)')
+axes[0].set_xlabel('Tumor_Size (z-score)')
+axes[0].set_ylabel('Fréquence')
+axes[0].legend()
+
+# Boxplot Age
+sns.boxplot(data=df_clean, x='Brain_Tumor_Present', y='Age',
+            palette={'No': '#2ecc71', 'Yes': '#e74c3c'}, ax=axes[1])
+axes[1].set_title('Âge selon le statut tumeur')
+axes[1].set_xlabel('Brain_Tumor_Present')
+axes[1].set_xticklabels(['Pas de tumeur', 'Tumeur présente'])
+
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 33 ===
+
+
+=== Cell 34 ===
+fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+fig.suptitle('Facteurs de risque vs Brain_Tumor_Present', fontsize=13, fontweight='bold')
+
+# Risque génétique (dataset original non encodé)
+genetic = df.groupby(['Genetic_Risk', 'Brain_Tumor_Present']).size().unstack(fill_value=0)
+genetic.plot(kind='bar', ax=axes[0], color=['#2ecc71', '#e74c3c'], edgecolor='black')
+axes[0].set_title('Risque génétique vs Tumeur')
+axes[0].set_xlabel('Risque Génétique')
+axes[0].set_ylabel('Nb patients')
+axes[0].tick_params(axis='x', rotation=30)
+axes[0].legend(['Pas de tumeur', 'Tumeur présente'])
+
+# Antécédents familiaux
+fh = df.groupby(['Family_History', 'Brain_Tumor_Present']).size().unstack(fill_value=0)
+fh.index = ['Sans antécédents', 'Avec antécédents']
+fh.plot(kind='bar', ax=axes[1], color=['#2ecc71', '#e74c3c'], edgecolor='black')
+axes[1].set_title('Antécédents familiaux vs Tumeur')
+axes[1].set_xlabel('Antécédents familiaux')
+axes[1].set_ylabel('Nb patients')
+axes[1].tick_params(axis='x', rotation=0)
+axes[1].legend(['Pas de tumeur', 'Tumeur présente'])
+
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 35 ===
+
+
+=== Cell 36 ===
+fig, ax = plt.subplots(figsize=(11, 5))
+# On utilise df original (avant encodage) pour les étiquettes lisibles
+tumor_types = df['Tumor_Type'].unique()
+colors_map = {'Glioma': '#e74c3c', 'Meningioma': '#3498db',
+              'Pituitary': '#9b59b6', 'No Tumor': '#2ecc71'}
+
+for tt in tumor_types:
+    subset = df_clean.loc[df['Tumor_Type'] == tt, 'Tumor_Growth_Rate']
+    ax.hist(subset, bins=25, alpha=0.5, label=tt,
+            color=colors_map.get(tt, 'grey'), edgecolor='black')
+
+ax.set_title('Distribution du Taux de Croissance par Type de Tumeur', fontsize=12, fontweight='bold')
+ax.set_xlabel('Tumor_Growth_Rate (z-score)')
+ax.set_ylabel('Fréquence')
+ax.legend(title='Type de tumeur')
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 37 ===
+
+
+=== Cell 38 ===
+# Encoder Tumor_Type en numérique pour y2
+le_tumor = LabelEncoder()
+df_clean['Tumor_Type_encoded'] = le_tumor.fit_transform(df_clean['Tumor_Type'].astype(str))
+
+mapping = dict(enumerate(le_tumor.classes_))
+print(f'Encodage Tumor_Type : {mapping}')
+
+# ─── Définir X, y1, y2 ────────────────────────────────────────────────
+exclude = ['Brain_Tumor_Present', 'Tumor_Type', 'Tumor_Type_encoded']
+X  = df_clean.drop(columns=exclude)
+y1 = df_clean['Brain_Tumor_Present']
+y2 = df_clean['Tumor_Type_encoded']
+
+print(f'\n📦 Features X     : {X.shape[1]} colonnes × {X.shape[0]} patients')
+print(f'🎯 y1 classes     : {sorted(y1.unique())}')
+print(f'🎯 y2 classes     : {sorted(y2.unique())}')
+
+=== Cell 39 ===
+# ─── Split Train / Test (80% / 20%) ──────────────────────────────────────
+# stratify=y1 garantit la même proportion de 0/1 dans train ET test
+
+X_train, X_test, y1_train, y1_test = train_test_split(
+    X, y1, test_size=0.2, random_state=42, stratify=y1
+)
+_, _, y2_train, y2_test = train_test_split(
+    X, y2, test_size=0.2, random_state=42, stratify=y2
+)
+
+print(f'✅ Split effectué :')
+print(f'   Entraînement : {X_train.shape[0]} patients ({X_train.shape[0]/len(X)*100:.0f}%)')
+print(f'   Test         : {X_test.shape[0]} patients ({X_test.shape[0]/len(X)*100:.0f}%)')
+print(f'\nDistribution y1 dans train : {dict(y1_train.value_counts())}')
+print(f'Distribution y1 dans test  : {dict(y1_test.value_counts())}')
+
+=== Markdown Cell 40 ===
+
+
+=== Markdown Cell 41 ===
+
+
+=== Cell 42 ===
+lr = LogisticRegression(max_iter=1000, random_state=42)
+lr.fit(X_train, y1_train)
+y1_pred_lr = lr.predict(X_test)
+print('✅ Régression Logistique entraînée.')
+
+=== Markdown Cell 43 ===
+
+
+=== Cell 44 ===
+rf1 = RandomForestClassifier(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)
+rf1.fit(X_train, y1_train)
+y1_pred_rf = rf1.predict(X_test)
+print('✅ Random Forest (Binary) entraîné.')
+
+=== Markdown Cell 45 ===
+
+
+=== Cell 46 ===
+rf2 = RandomForestClassifier(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)
+rf2.fit(X_train, y2_train)
+y2_pred_rf = rf2.predict(X_test)
+print('✅ Random Forest (Multi-classe) entraîné.')
+
+=== Markdown Cell 47 ===
+
+
+=== Cell 48 ===
+def evaluer_modele_binaire(y_true, y_pred, nom_modele):
+    """Calcule et affiche les métriques pour un modèle binaire."""
+    acc  = accuracy_score(y_true, y_pred)
+    prec = precision_score(y_true, y_pred, zero_division=0)
+    rec  = recall_score(y_true, y_pred, zero_division=0)
+    f1   = f1_score(y_true, y_pred, zero_division=0)
+
+    print(f'┌─── {nom_modele} ───────────────────────────')
+    print(f'│  Accuracy  : {acc:.4f}  ({acc*100:.1f}%)')
+    print(f'│  Precision : {prec:.4f}')
+    print(f'│  Recall    : {rec:.4f}')
+    print(f'│  F1-Score  : {f1:.4f}')
+    print('└───────────────────────────────────────────')
+
+    return {'model': nom_modele, 'accuracy': acc, 'precision': prec,
+            'recall': rec, 'f1': f1}
+
+print('\n📊 RÉSULTATS — Brain_Tumor_Present\n')
+res_lr = evaluer_modele_binaire(y1_test, y1_pred_lr, 'Logistic Regression')
+print()
+res_rf = evaluer_modele_binaire(y1_test, y1_pred_rf, 'Random Forest')
+
+=== Cell 49 ===
+# ─── Matrices de confusion ────────────────────────────────────────────────
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+fig.suptitle('Matrices de Confusion — Brain_Tumor_Present', fontsize=13, fontweight='bold')
+
+for ax, y_pred, title in zip(
+    axes,
+    [y1_pred_lr, y1_pred_rf],
+    ['Régression Logistique', 'Random Forest']
+):
+    cm = confusion_matrix(y1_test, y_pred)
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax,
+                xticklabels=['Prédit: Pas tumeur', 'Prédit: Tumeur'],
+                yticklabels=['Réel: Pas tumeur', 'Réel: Tumeur'])
+    ax.set_title(title, fontsize=11, fontweight='bold')
+
+plt.tight_layout()
+plt.show()
+
+=== Cell 50 ===
+# ─── Comparaison visuelle des métriques ──────────────────────────────────
+metrics = ['accuracy', 'precision', 'recall', 'f1']
+lr_sc = [res_lr[m] for m in metrics]
+rf_sc = [res_rf[m] for m in metrics]
+
+x = np.arange(len(metrics))
+w = 0.35
+fig, ax = plt.subplots(figsize=(9, 5))
+b1 = ax.bar(x - w/2, lr_sc, w, label='Logistic Regression', color='#3498db', edgecolor='black')
+b2 = ax.bar(x + w/2, rf_sc, w, label='Random Forest',       color='#e74c3c', edgecolor='black')
+
+for bar in list(b1) + list(b2):
+    ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
+            f'{bar.get_height():.3f}', ha='center', fontsize=9)
+
+ax.set_ylim(0, 1.15)
+ax.set_xticks(x)
+ax.set_xticklabels(['Accuracy', 'Precision', 'Recall', 'F1-Score'])
+ax.set_title('Comparaison des Modèles — Brain_Tumor_Present', fontsize=12, fontweight='bold')
+ax.set_ylabel('Score')
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 51 ===
+
+
+=== Cell 52 ===
+print(f'Accuracy Random Forest (Tumor_Type) : {accuracy_score(y2_test, y2_pred_rf):.4f}')
+print('\nRapport de classification détaillé :')
+print(classification_report(y2_test, y2_pred_rf,
+                             target_names=le_tumor.classes_, zero_division=0))
+
+=== Cell 53 ===
+fig, ax = plt.subplots(figsize=(8, 6))
+cm2 = confusion_matrix(y2_test, y2_pred_rf)
+sns.heatmap(cm2, annot=True, fmt='d', cmap='Purples', ax=ax,
+            xticklabels=le_tumor.classes_,
+            yticklabels=le_tumor.classes_)
+ax.set_title('Matrice de Confusion — Tumor_Type', fontsize=12, fontweight='bold')
+ax.set_ylabel('Réel')
+ax.set_xlabel('Prédit')
+plt.tight_layout()
+plt.show()
+
+=== Markdown Cell 54 ===
+
+
+=== Cell 55 ===
+# ─── Quel est le meilleur modèle ? ──────────────────────────────────────
+best = 'Random Forest' if res_rf['f1'] > res_lr['f1'] else 'Logistic Regression'
+best_f1 = max(res_rf['f1'], res_lr['f1'])
+diff = abs(res_rf['f1'] - res_lr['f1'])
+
+print('🏆 MEILLEUR MODÈLE (Brain_Tumor_Present)')
+print('─' * 45)
+print(f'   Modèle   : {best}')
+print(f'   F1-Score : {best_f1:.4f}')
+print(f'   Écart F1 vs autre modèle : {diff:.4f}')
+print()
+print('Pourquoi Random Forest est généralement supérieur ?')
+print('  ✔ Combine des centaines d\'arbres → réduction du biais ET de la variance')
+print('  ✔ Gère les relations non-linéaires entre variables')
+print('  ✔ Robuste au bruit et aux outliers')
+print('  ✔ Fonctionne bien même sans normalisation')
+
+=== Markdown Cell 56 ===
+
+
+=== Cell 57 ===
+fi = pd.Series(rf1.feature_importances_, index=X.columns).sort_values(ascending=False)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+colors = ['#e74c3c' if i < 5 else '#3498db' for i in range(len(fi))]
+fi.plot(kind='barh', ax=ax, color=colors[::-1], edgecolor='black')
+ax.invert_yaxis()
+ax.axvline(fi.mean(), color='orange', linestyle='--', linewidth=1.5,
+           label=f'Moyenne ({fi.mean():.3f})')
+ax.set_title('Feature Importance — Random Forest (Brain_Tumor_Present)',
+             fontsize=12, fontweight='bold')
+ax.set_xlabel('Importance relative')
+ax.legend()
+plt.tight_layout()
+plt.show()
+
+print('\n📌 Top 5 features les plus importantes :')
+for i, (feat, score) in enumerate(fi.head(5).items(), 1):
+    print(f'   {i}. {feat:28s} → {score:.4f}')
+
+=== Markdown Cell 58 ===
+
+
+=== Cell 59 ===
+top3 = fi.head(3).index.tolist()
+print('🩺 INTERPRÉTATION MÉDICALE SIMPLE')
+print('─' * 50)
+print(f'\nLes 3 facteurs les plus influents : {top3}')
+print('''
+📋 Exemple d'interprétation (Brain_Tumor_Present) :
+
+  "Un patient présentant une grande Tumor_Size,
+   des résultats d'IRM anormaux (MRI_Findings = Abnormal)
+   et des antécédents familiaux (Family_History = 1)
+   a un risque significativement plus élevé d'avoir
+   une tumeur cérébrale."
+
+📋 Interprétation pour Tumor_Type :
+
+  "Le type de tumeur est souvent influencé par :
+   - La localisation (Tumor_Location)
+   - L'âge du patient (Age)
+   - Le risque génétique (Genetic_Risk)
+   - L'exposition aux radiations (Radiation_Exposure)
+   Les Gliomes sont souvent associés à un taux de
+   croissance plus élevé et un risque génétique élevé."
+''')
+
+=== Markdown Cell 60 ===
+
+
+=== Cell 61 ===
+fi2 = pd.Series(rf2.feature_importances_, index=X.columns).sort_values(ascending=False)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+fi2.plot(kind='barh', ax=ax, color='#9b59b6', edgecolor='black')
+ax.invert_yaxis()
+ax.set_title('Feature Importance — Random Forest (Tumor_Type)',
+             fontsize=12, fontweight='bold')
+ax.set_xlabel('Importance relative')
+plt.tight_layout()
+plt.show()
+
+print('Top 5 features pour Tumor_Type :')
+for i, (feat, score) in enumerate(fi2.head(5).items(), 1):
+    print(f'   {i}. {feat:28s} → {score:.4f}')
+
+=== Markdown Cell 62 ===
+
+
+=== Cell 63 ===
+# ─── Profil du nouveau patient ───────────────────────────────────────────
+nouveau_patient = {
+    'Age': 45,
+    'Gender': 'Male',
+    'Country': 'France',
+    'Tumor_Size': 7.2,
+    'Tumor_Location': 'Frontal',
+    'MRI_Findings': 'Abnormal',
+    'Genetic_Risk': 'High',
+    'Smoking_History': 1,
+    'Alcohol_Consumption': 0,
+    'Radiation_Exposure': 1,
+    'Head_Injury_History': 0,
+    'Chronic_Illness': 1,
+    'Blood_Pressure': 'High',
+    'Diabetes': 1,
+    'Tumor_Growth_Rate': 3.5,
+    'Family_History': 1,
+    'Symptom_Severity': 'Severe'
+}
+
+print('Profil du patient :')
+for k, v in nouveau_patient.items():
+    print(f'  {k:25s}: {v}')
+
+=== Cell 64 ===
+# ─── Préparer le patient pour la prédiction ──────────────────────────────
+le_np = LabelEncoder()
+np_df = pd.DataFrame([nouveau_patient])
+
+cat_np = ['Gender', 'Country', 'Tumor_Location', 'MRI_Findings',
+          'Genetic_Risk', 'Blood_Pressure', 'Symptom_Severity']
+for col in cat_np:
+    np_df[col] = le_np.fit_transform(np_df[col].astype(str))
+
+# Aligner les colonnes
+for col in X.columns:
+    if col not in np_df.columns:
+        np_df[col] = 0
+np_df = np_df[X.columns]
+
+# Normaliser
+np_scaled = scaler.transform(np_df)
+
+# ─── Prédictions ──────────────────────────────────────────────────────────
+pred_present = rf1.predict(np_scaled)[0]
+pred_proba   = rf1.predict_proba(np_scaled)[0]
+pred_type_enc = rf2.predict(np_scaled)[0]
+pred_type_lb  = le_tumor.inverse_transform([pred_type_enc])[0]
+
+print('\n' + '═'*50)
+print('    RÉSULTATS DE PRÉDICTION')
+print('═'*50)
+status = '🔴 TUMEUR DÉTECTÉE' if pred_present == 1 else '🟢 PAS DE TUMEUR'
+print(f'\n  Brain_Tumor_Present : {pred_present} → {status}')
+print(f'  Probabilités        : [Pas de tumeur = {pred_proba[0]*100:.1f}% | Tumeur = {pred_proba[1]*100:.1f}%]')
+print(f'  Type de tumeur      : {pred_type_lb}')
+print('═'*50)
+
+=== Markdown Cell 65 ===
+
+
+=== Cell 66 ===
+recommandations = [
+    ('📦 Plus de données',
+     '10 000+ patients améliore drastiquement la généralisation'),
+    ('⚖️  Gestion déséquilibre',
+     'Utiliser SMOTE ou class_weight="balanced" si classes déséquilibrées'),
+    ('🔍 Tuning hyperparamètres',
+     'GridSearchCV / RandomizedSearchCV pour optimiser n_estimators, max_depth...'),
+    ('🧠 Modèles avancés',
+     'XGBoost, LightGBM, CatBoost → souvent +2-5% accuracy sur données médicales'),
+    ('🔬 Cross-validation',
+     'Remplacer le split 80/20 par k-fold (k=5 ou 10) pour une évaluation plus robuste'),
+    ('🩻 Features supplémentaires',
+     'Ajouter marqueurs biologiques (CRP, WBC, lymphocytes) si disponibles'),
+    ('📈 Courbe ROC / AUC',
+     'Comparer les modèles sur l\'AUC, plus pertinent que l\'accuracy pour données médicales'),
+    ('🌐 SHAP — Explicabilité',
+     'Utiliser la librairie SHAP pour expliquer chaque prédiction individuelle (crucial pour médecins)'),
+]
+
+print('\n📋 RECOMMANDATIONS POUR AMÉLIORER LE MODÈLE')
+print('─' * 65)
+for i, (titre, detail) in enumerate(recommandations, 1):
+    print(f'\n  {i}. {titre}')
+    print(f'     → {detail}')
+
+=== Markdown Cell 67 ===
+
+
